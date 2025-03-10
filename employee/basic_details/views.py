@@ -22,66 +22,156 @@ async def create_employee(request, data: EmployeeInputSchema):
     user = request.auth
     if user and await sync_to_async(lambda: user.role == 'admin' and user.organization)():
         try:
-            employee_data = data.dict()
-            user_obj = await sync_to_async(User.objects.create)(name=data.name,username=data.username,email=data.email,phone=data.phone)
+            # Create a User object with user-specific fields
+            user_obj = await sync_to_async(User.objects.create)(name=data.name, username=data.username, email=data.email, phone=data.phone,password=data.password)
+            user_obj.set_password(data.password)  # Set the password here
+            await sync_to_async(user_obj.save)()
+
+            # Create the Employee object
             reporting_manager = await sync_to_async(User.objects.get)(id=data.reporting_manager_id) if data.reporting_manager_id else None
             business_unit = await sync_to_async(BusinessUnitSettings.objects.get)(id=data.business_unit_id) if data.business_unit_id else None
             department = await sync_to_async(DepartmentSettings.objects.get)(id=data.department_id) if data.department_id else None
             designation = await sync_to_async(DesignationSettings.objects.get)(id=data.designation_id) if data.designation_id else None
-            for field in ['user_id', 'reporting_manager_id', 'business_unit_id', 'department_id', 'designation_id']:
+
+            # Remove user-related fields from the employee data
+            employee_data = data.dict()
+            for field in ['username', 'email', 'password', 'name', 'phone', 'role', 'reporting_manager_id', 'business_unit_id', 'department_id', 'designation_id']:
                 employee_data.pop(field, None)
-            employee = await sync_to_async(Employee.objects.create)(user=user_obj,created_by=user,reporting_manager=reporting_manager,business_unit=business_unit,department=department,designation=designation,**employee_data)
+
+            # Create an Employee object using the remaining fields
+            employee = await sync_to_async(Employee.objects.create)(user=user_obj, created_by=user, reporting_manager=reporting_manager, business_unit=business_unit, department=department, designation=designation, **employee_data)
+
             return 201, EmployeeSchema.from_orm(employee)
+
         except Exception as e:
             return 400, {"message": str(e)}
+
     return 400, {"message": "Unauthorized access"}
 
-@employee_basic_api.get("/employee", response={200: List[EmployeeSchema], 404: Message})
+
+@employee_basic_api.get("/employee", response={200: Union[List[EmployeeSchema], EmployeeSchema], 400: Message})
 async def get_employees(request, id: Optional[int] = None):
-    user = request.auth 
+    user = request.auth
     if user and await sync_to_async(lambda: user.organization)():
         try:
-            base_query = Employee.objects.select_related('user','created_by','reporting_manager','business_unit','department','designation').filter(created_by__organization=user.organization)
-            if id:
+            base_query = Employee.objects.select_related(
+                'user',
+                'created_by',
+                'reporting_manager',
+                'business_unit',
+                'business_unit__unit_head',
+                'business_unit__updated_by',
+                'department',
+                'department__department_head',
+                'department__updated_by',
+                'designation',
+                'designation__updated_by'
+            ).filter(created_by__organization=user.organization)
+
+            if id is not None:
                 employee = await sync_to_async(base_query.get)(id=id)
                 return 200, EmployeeSchema.from_orm(employee)
+
             employees = await sync_to_async(list)(base_query)
             return 200, [EmployeeSchema.from_orm(emp) for emp in employees]
-        except Employee.DoesNotExist:
-            return 404, {"message": "Employee not found"}
-        except Exception as e:
-            return 400, {"message": str(e)}
-    return 400, {"message": "Unauthorized access"}
 
-@employee_basic_api.put("/employee/{id}", response={200: EmployeeSchema, 404: Message})
-async def update_employee(request, id: int, data: EmployeeInputSchema):
-    user = request.auth
-    if user and await sync_to_async(lambda: user.role == 'admin' and user.organization)():
-        try:
-            employee = await sync_to_async(Employee.objects.select_related('user','created_by','reporting_manager','business_unit','department','designation').get)(id=id, created_by__organization=user.organization)
-            # Update related fields if provided
-            if data.user_id:
-                employee.user = await sync_to_async(User.objects.get)(id=data.user_id)
-            if data.reporting_manager_id:
-                employee.reporting_manager = await sync_to_async(User.objects.get)(id=data.reporting_manager_id)
-            if data.business_unit_id:
-                employee.business_unit = await sync_to_async(BusinessUnitSettings.objects.get)(id=data.business_unit_id)
-            if data.department_id:
-                employee.department = await sync_to_async(DepartmentSettings.objects.get)(id=data.department_id)
-            if data.designation_id:
-                employee.designation = await sync_to_async(DesignationSettings.objects.get)(id=data.designation_id)
-            # Update other fields
-            update_data = data.dict(exclude={'user_id', 'reporting_manager_id', 'business_unit_id', 'department_id', 'designation_id'})
-            for key, value in update_data.items():
-                if value is not None:
-                    setattr(employee, key, value)
-            await sync_to_async(employee.save)()
-            return 200, EmployeeSchema.from_orm(employee)
-        except Employee.DoesNotExist:
-            return 404, {"message": "Employee not found"}
         except Exception as e:
             return 400, {"message": str(e)}
-    return 400, {"message": "Unauthorized access"}
+    return 400, {"message": "Unauthorized or organization not found"}
+
+@employee_basic_api.put("/employee/{id}", response={200: EmployeeSchema, 400: Message, 404: Message})
+async def update_employee(request, id: int, payload: EmployeeUpdateSchema):
+    user = request.auth
+    if user and await sync_to_async(lambda: user.organization)():
+        try:
+            base_query = Employee.objects.select_related(
+                'user',
+                'created_by',
+                'reporting_manager',
+                'business_unit',
+                'business_unit__unit_head',
+                'business_unit__updated_by',
+                'department',
+                'department__department_head',
+                'department__updated_by',
+                'designation',
+                'designation__updated_by'
+            ).filter(created_by__organization=user.organization)
+
+            # Get existing employee
+            employee = await sync_to_async(base_query.get)(id=id)
+            
+            # Update fields
+            update_data = payload.dict(exclude_unset=True)
+            
+            # Update basic fields
+            basic_fields = [
+                'employee_code', 'profile', 'date_of_joining',
+                'employment_type', 'service_status', 'workmode',
+                'probation', 'extension', 'notice_period',
+                'enrollment_no', 'trigger_onboarding', 'send_mail',
+                'weekly_offs', 'permissions'
+            ]
+            
+            for field in basic_fields:
+                if field in update_data:
+                    await sync_to_async(setattr)(employee, field, update_data.get(field))
+            
+            # Update related fields if provided
+            if 'reporting_manager' in update_data:
+                reporting_manager_data = update_data.get('reporting_manager')
+                if reporting_manager_data:
+                    reporting_manager = await sync_to_async(User.objects.get)(
+                        email=reporting_manager_data.get('email')
+                    )
+                    employee.reporting_manager = reporting_manager
+            
+            if 'business_unit' in update_data:
+                business_unit_data = update_data.get('business_unit')
+                if business_unit_data:
+                    business_unit = await sync_to_async(Business_unit.objects.get)(
+                        title=business_unit_data.get('title')
+                    )
+                    employee.business_unit = business_unit
+            
+            if 'department' in update_data:
+                department_data = update_data.get('department')
+                if department_data:
+                    department = await sync_to_async(Department.objects.get)(
+                        title=department_data.get('title')
+                    )
+                    employee.department = department
+            
+            if 'designation' in update_data:
+                designation_data = update_data.get('designation')
+                if designation_data:
+                    designation = await sync_to_async(Designation.objects.get)(
+                        title=designation_data.get('title')
+                    )
+                    employee.designation = designation
+
+            # Save the updated employee
+            await sync_to_async(employee.save)()
+            
+            # Refresh the employee instance to get updated data
+            updated_employee = await sync_to_async(base_query.get)(id=id)
+            
+            return 200, EmployeeSchema.from_orm(updated_employee)
+
+        except Employee.DoesNotExist:
+            return 404, {"message": "Employee not found"}
+        except User.DoesNotExist:
+            return 400, {"message": "Invalid user reference"}
+        except Business_unit.DoesNotExist:
+            return 400, {"message": "Invalid business unit reference"}
+        except Department.DoesNotExist:
+            return 400, {"message": "Invalid department reference"}
+        except Designation.DoesNotExist:
+            return 400, {"message": "Invalid designation reference"}
+        except Exception as e:
+            return 400, {"message": str(e)}
+            
+    return 400, {"message": "Unauthorized or organization not found"}
 
 @employee_basic_api.delete("/employee/{id}", response={200: Message, 404: Message})
 async def delete_employee(request, id: int):
@@ -97,22 +187,46 @@ async def delete_employee(request, id: int):
             return 400, {"message": str(e)}
     return 400, {"message": "Unauthorized access"}
 
-# Profile image upload endpoint
-@employee_basic_api.post("/employee/{id}/upload-profile", response={200: Message, 404: Message})
-async def upload_profile_image(request, id: int):
+@employee_basic_api.post("/personal_detail", response={201: PersonalDetailSchema, 400: dict})
+async def create_personal_detail(request, data: PersonalDetailSchema):
     user = request.auth
-    if user and await sync_to_async(lambda: user.role == 'admin' and user.organization)():
-        try:
-            employee = await sync_to_async(Employee.objects.get)(id=id, created_by__organization=user.organization)
-            data = await request.form()
-            file = data.get('profile')
-            if file:
-                employee.profile = file
-                await sync_to_async(employee.save)()
-                return 200, {"message": "Profile image uploaded successfully"}
-            return 400, {"message": "No profile image provided"}
-        except Employee.DoesNotExist:
-            return 404, {"message": "Employee not found"}
-        except Exception as e:
-            return 400, {"message": str(e)}
-    return 400, {"message": "Unauthorized access"} 
+    try:
+        employee = await sync_to_async(Employee.objects.get)(user=user)
+        personal_detail = await sync_to_async(PersonalDetail.objects.create)(
+            employee=employee,
+            **data.dict()
+        )
+        return 201, PersonalDetailSchema.from_orm(personal_detail)
+    except Employee.DoesNotExist:
+        return 400, {"message": "Employee profile not found"}
+    except Exception as e:
+        return 400, {"message": str(e)}
+
+@employee_basic_api.get("/personal_detail", response={200: PersonalDetailSchema, 404: dict})
+async def get_personal_detail(request):
+    user = request.auth
+    try:
+        employee = await sync_to_async(Employee.objects.get)(user=user)
+        personal_detail = await sync_to_async(PersonalDetail.objects.get)(employee=employee)
+        return 200, PersonalDetailSchema.from_orm(personal_detail)
+    except PersonalDetail.DoesNotExist:
+        return 404, {"message": "Personal details not found"}
+    except Employee.DoesNotExist:
+        return 404, {"message": "Employee profile not found"}
+
+@employee_basic_api.put("/personal_detail", response={200: PersonalDetailSchema, 400: dict})
+async def update_personal_detail(request, data: PersonalDetailSchema):
+    user = request.auth
+    try:
+        employee = await sync_to_async(Employee.objects.get)(user=user)
+        personal_detail = await sync_to_async(PersonalDetail.objects.get)(employee=employee)
+
+        for attr, value in data.dict(exclude_unset=True).items():
+            setattr(personal_detail, attr, value)
+        
+        await sync_to_async(personal_detail.save)()
+        return 200, PersonalDetailSchema.from_orm(personal_detail)
+    except PersonalDetail.DoesNotExist:
+        return 400, {"message": "Personal details not found"}
+    except Employee.DoesNotExist:
+        return 400, {"message": "Employee profile not found"}

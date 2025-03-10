@@ -2,8 +2,8 @@ from ninja import PatchDict, Router
 from django.contrib.auth import get_user_model
 from settings.general_settings.schema import *
 from typing import *
-from user.models import *
-from .models import *
+from employee.basic_details.models import *
+from settings.general_settings.models import *
 from ninja_jwt.authentication import JWTAuth
 from ninja_jwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
@@ -14,25 +14,16 @@ from asgiref.sync import sync_to_async
 from ninja_jwt.tokens import RefreshToken, AccessToken
 from ninja_jwt.tokens import RefreshToken
 from ninja.errors import HttpError
+from user.models import UserProfile
 
 general_setting_api = Router(tags=['general_settings'])
 User = get_user_model()
-
-# @general_setting_api.post('/general',response={201: GeneralSchema, 400: Message})
-# async def general_setting(request, data: GeneralSchema):
-#     user = request.auth
-#     if user and await sync_to_async(lambda: user.role == 'admin' and user.organization)():
-#         _data=data.dict()
-#         gen=await Organization.objects.acreate(**_data, organization=user.organization,crtd_by=user)
-#         await gen.asave()
-#         return 201, GeneralSchema.from_orm(gen)
-#     return 400,{"message":"organization doesnot exist"}
 
 @general_setting_api.put("/general",response={200: GeneralSchema, 400: Message})
 async def update_general(request,data:GeneralSchema):
     user= request.auth
     if user and await sync_to_async(lambda: user.role == 'admin' and user.organization)():
-        gen = await Organization.objects.aget(id=id) 
+        gen = await Organization.objects.aget(id=user.organization.id) 
         for field, value in data.dict(exclude_unset=True).items():
             setattr(gen, field, value)        
         await gen.asave()
@@ -57,7 +48,6 @@ async def add_department(request,data:DepartmentInputSchema):
         user_data=await sync_to_async(UserProfile.objects.get)(id=user.id) 
         department_head = None
         if data.department_head:
-
             department_head = await sync_to_async(UserProfile.objects.get)(id=data.department_head)
         dept = await sync_to_async(DepartmentSettings.objects.create)(**_data,department_head=department_head,updated_by=user_data)
         dept.department_head = department_head
@@ -69,7 +59,7 @@ async def add_department(request,data:DepartmentInputSchema):
 async def get_departments(request, id: Optional[int] = None):
     user = request.auth
     if user and await sync_to_async(lambda: user.organization)():
-        base_query = DepartmentSettings.objects.select_related('department_head','updated_by').filter(department_head__organization=user.organization)
+        base_query = DepartmentSettings.objects.select_related('department_head','updated_by').filter(updated_by__organization=user.organization)
         if id is not None:
             department = await sync_to_async(base_query.get)(id=id)  
             return 200, DepartmentSchema.from_orm(department)

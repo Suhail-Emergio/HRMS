@@ -4,18 +4,17 @@ from django.conf import settings
 from django.conf.urls.static import static
 from ninja import NinjaAPI
 from .utils.auth import *
-from employee.basic_details.views import *
-from employee.additional_details.views import *
 from user.views import *
-from settings.general_settings.views import *
-from settings.employee_settings.views import *
+from settings.general_settings.views import general_setting_api
+from settings.employee_settings.views import employee_setting_api
+from employee.basic_details.views import employee_basic_api
 
 api = NinjaAPI(auth=AsyncJWTAuth())
+# api.add_router('employee', employee_api)
 api.add_router('user', user_api)
 api.add_router('general_settings', general_setting_api)
 api.add_router('employee_settings', employee_setting_api)
 api.add_router('employee_basic', employee_basic_api)
-api.add_router('employee_additional', employee_additional_api)
 
 
 urlpatterns = [

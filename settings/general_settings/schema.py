@@ -36,7 +36,7 @@ class EmployeeSchema(Schema):
 class DepartmentInputSchema(Schema):
     title: str
     description: Optional[str] = None
-    department_head: Optional[str] = None
+    department_head: Optional[int] = None
 
 class DepartmentSchema(Schema):
     title: str
