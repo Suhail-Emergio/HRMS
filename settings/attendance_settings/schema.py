@@ -61,3 +61,32 @@ class SandwichRulesSettingsSchema(Schema):
     week_off_holidays_before_absent: Optional[bool] = False
     absent_week_offs_holidays_beginning_month: Optional[bool] = False
     absent_week_offs_holidays_end_month: Optional[bool] = False
+
+class OvertimeSettingsSchema(Schema):
+    organization: int
+    enable_overtime: Optional[bool] = False
+    overtime_approval_status: Optional[str] = "Manager Approved"
+    round_off_minutes: Optional[bool] = False
+    rounding_method: Optional[str] = "Standard"
+    rounding_value: Optional[int] = 1
+    convert_overtime_to_compensation: Optional[bool] = False
+    comp_off_request_on_overtime: Optional[bool] = False
+    default_overtime_rule: Optional[str] = "Compensation"
+
+class CompensationRulesSchema(Schema):
+    organization: int
+    daily_eligibility: Optional[str] = None
+    weekoff_eligibility: Optional[str] = None
+    holiday_eligibility: Optional[str] = None
+    daily_rule: Optional[Dict] = None
+    weekoff_rule: Optional[Dict] = None
+    holiday_rule: Optional[Dict] = None
+
+class CompOffRulesSchema(Schema):
+    organization: int
+    daily_eligibility: Optional[str] = None
+    weekoff_eligibility: Optional[str] = None
+    holiday_eligibility: Optional[str] = None
+    daily_rule: Optional[Dict] = None
+    weekoff_rule: Optional[Dict] = None
+    holiday_rule: Optional[Dict] = None

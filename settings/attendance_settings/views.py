@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from ninja import Router
-from schema import *
+from .schema import *
 from settings.attendance_settings.models import *
 # Create your views here.
 
@@ -143,3 +143,89 @@ def update_sandwich_rules(request, organization_id: int, data: SandwichRulesSett
         return 200, {"message": "Sandwich Rules updated successfully."}
     except SandwichRulesSettings.DoesNotExist:
         return 404, {"message": "Sandwich Rules not found for this organization."}
+    
+# Overtime Compensation and CompOff Settings
+
+# Overtime Settings
+@attendance_settings_api.post("/overtime_settings", response={201: dict, 409: dict})
+def create_overtime_settings(request, data: OvertimeSettingsSchema):
+    if TimeManagementPolicy.objects.filter(organization=data.organization).exists():
+        return 409, {"message": "Overtime Settings already exist for this organization."}
+    
+    TimeManagementPolicy.objects.create(**data.dict())
+    return 201, {"message": "Overtime Settings created successfully."}
+
+@attendance_settings_api.get("/overtime_settings/{organization_id}", response={200: OvertimeSettingsSchema, 404: dict})
+def get_overtime_settings(request, organization_id: int):
+    try:
+        overtime_settings = TimeManagementPolicy.objects.get(organization=organization_id)
+        return 200, overtime_settings
+    except TimeManagementPolicy.DoesNotExist:
+        return 404, {"message": "Overtime Settings not found for this organization."}
+
+@attendance_settings_api.put("/overtime_settings/{organization_id}", response={200: dict, 404: dict})
+def update_overtime_settings(request, organization_id: int, data: OvertimeSettingsSchema):
+    try:
+        overtime_settings = TimeManagementPolicy.objects.get(organization=organization_id)
+        for key, value in data.dict().items():
+            setattr(overtime_settings, key, value)
+        overtime_settings.save()
+        return 200, {"message": "Overtime Settings updated successfully."}
+    except TimeManagementPolicy.DoesNotExist:
+        return 404, {"message": "Overtime Settings not found for this organization."}
+
+# Compensation Rules
+@attendance_settings_api.post("/compensation_rules", response={201: dict, 409: dict})
+def create_compensation_rules(request, data: CompensationRulesSchema):
+    if CompensationRules.objects.filter(organization=data.organization).exists():
+        return 409, {"message": "Compensation Rules already exist for this organization."}
+    
+    CompensationRules.objects.create(**data.dict())
+    return 201, {"message": "Compensation Rules created successfully."}
+
+@attendance_settings_api.get("/compensation_rules/{organization_id}", response={200: CompensationRulesSchema, 404: dict})
+def get_compensation_rules(request, organization_id: int):
+    try:
+        compensation_rules = CompensationRules.objects.get(organization=organization_id)
+        return 200, compensation_rules
+    except CompensationRules.DoesNotExist:
+        return 404, {"message": "Compensation Rules not found for this organization."}
+
+@attendance_settings_api.put("/compensation_rules/{organization_id}", response={200: dict, 404: dict})
+def update_compensation_rules(request, organization_id: int, data: CompensationRulesSchema):
+    try:
+        compensation_rules = CompensationRules.objects.get(organization=organization_id)
+        for key, value in data.dict().items():
+            setattr(compensation_rules, key, value)
+        compensation_rules.save()
+        return 200, {"message": "Compensation Rules updated successfully."}
+    except CompensationRules.DoesNotExist:
+        return 404, {"message": "Compensation Rules not found for this organization."}
+
+# CompOff Rules
+@attendance_settings_api.post("/compoff_rules", response={201: dict, 409: dict})
+def create_compoff_rules(request, data: CompOffRulesSchema):
+    if CompOffRules.objects.filter(organization=data.organization).exists():
+        return 409, {"message": "CompOff Rules already exist for this organization."}
+    
+    CompOffRules.objects.create(**data.dict())
+    return 201, {"message": "CompOff Rules created successfully."}
+
+@attendance_settings_api.get("/compoff_rules/{organization_id}", response={200: CompOffRulesSchema, 404: dict})
+def get_compoff_rules(request, organization_id: int):
+    try:
+        compoff_rules = CompOffRules.objects.get(organization=organization_id)
+        return 200, compoff_rules
+    except CompOffRules.DoesNotExist:
+        return 404, {"message": "CompOff Rules not found for this organization."}
+
+@attendance_settings_api.put("/compoff_rules/{organization_id}", response={200: dict, 404: dict})
+def update_compoff_rules(request, organization_id: int, data: CompOffRulesSchema):
+    try:
+        compoff_rules = CompOffRules.objects.get(organization=organization_id)
+        for key, value in data.dict().items():
+            setattr(compoff_rules, key, value)
+        compoff_rules.save()
+        return 200, {"message": "CompOff Rules updated successfully."}
+    except CompOffRules.DoesNotExist:
+        return 404, {"message": "CompOff Rules not found for this organization."}

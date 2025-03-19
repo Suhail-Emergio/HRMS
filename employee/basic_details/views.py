@@ -13,22 +13,37 @@ from asgiref.sync import sync_to_async
 from ninja_jwt.tokens import RefreshToken, AccessToken
 from ninja_jwt.tokens import RefreshToken
 from ninja.errors import HttpError
+from django.core.exceptions import ObjectDoesNotExist
 
 employee_basic_api = Router(tags=['employee_basic'])
 User = get_user_model()
+
 
 @employee_basic_api.post("/employee", response={201: EmployeeSchema, 400: Message})
 async def create_employee(request, data: EmployeeInputSchema):
     user = request.auth
     if user and await sync_to_async(lambda: user.role == 'admin' and user.organization)():
         try:
-            # Create a User object with user-specific fields
-            user_obj = await sync_to_async(User.objects.create)(name=data.name, username=data.username, email=data.email, phone=data.phone,password=data.password)
-            user_obj.set_password(data.password)  # Set the password here
+            organization = await sync_to_async(lambda: user.organization)()
+            reporting_manager = None
+            if data.reporting_manager_id:
+                reporting_manager = await sync_to_async(User.objects.get)(id=data.reporting_manager_id)
+                # Check if the reporting manager belongs to the same organization
+                if reporting_manager.organization != organization:
+                    return 400, {"message": "Reporting manager does not belong to the same organization"}
+            user_obj = await sync_to_async(User.objects.create)(
+                name=data.name,
+                username=data.username,
+                email=data.email,
+                phone=data.phone,
+                password=data.password,
+                organization=organization
+            )
+            await sync_to_async(user_obj.set_password)(data.password)  # Set the password here
             await sync_to_async(user_obj.save)()
 
-            # Create the Employee object
-            reporting_manager = await sync_to_async(User.objects.get)(id=data.reporting_manager_id) if data.reporting_manager_id else None
+            # Fetch related objects using sync_to_async
+            # reporting_manager = await sync_to_async(User.objects.get)(id=data.reporting_manager_id) if data.reporting_manager_id else None
             business_unit = await sync_to_async(BusinessUnitSettings.objects.get)(id=data.business_unit_id) if data.business_unit_id else None
             department = await sync_to_async(DepartmentSettings.objects.get)(id=data.department_id) if data.department_id else None
             designation = await sync_to_async(DesignationSettings.objects.get)(id=data.designation_id) if data.designation_id else None
@@ -39,10 +54,22 @@ async def create_employee(request, data: EmployeeInputSchema):
                 employee_data.pop(field, None)
 
             # Create an Employee object using the remaining fields
-            employee = await sync_to_async(Employee.objects.create)(user=user_obj, created_by=user, reporting_manager=reporting_manager, business_unit=business_unit, department=department, designation=designation, **employee_data)
+            employee = await sync_to_async(Employee.objects.create)(
+                user=user_obj,
+                created_by=user,
+                reporting_manager=reporting_manager,
+                business_unit=business_unit,
+                department=department,
+                designation=designation,
+                **employee_data
+            )
 
-            return 201, EmployeeSchema.from_orm(employee)
+            # Use sync_to_async to convert the Employee object to a schema
+            employee_schema = await sync_to_async(EmployeeSchema.from_orm)(employee)
+            return 201, employee_schema
 
+        except ObjectDoesNotExist as e:
+            return 400, {"message": f"Related object not found: {str(e)}"}
         except Exception as e:
             return 400, {"message": str(e)}
 
@@ -202,13 +229,13 @@ async def create_personal_detail(request, data: PersonalDetailSchema):
     except Exception as e:
         return 400, {"message": str(e)}
 
-@employee_basic_api.get("/personal_detail", response={200: PersonalDetailSchema, 404: dict})
+@employee_basic_api.get("/personal_detail", response={200: PersonalDetailInputSchema, 404: dict})
 async def get_personal_detail(request):
     user = request.auth
     try:
         employee = await sync_to_async(Employee.objects.get)(user=user)
         personal_detail = await sync_to_async(PersonalDetail.objects.get)(employee=employee)
-        return 200, PersonalDetailSchema.from_orm(personal_detail)
+        return 200, PersonalDetailInputSchema.from_orm(personal_detail)
     except PersonalDetail.DoesNotExist:
         return 404, {"message": "Personal details not found"}
     except Employee.DoesNotExist:
