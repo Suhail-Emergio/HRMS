@@ -28,9 +28,9 @@ async def create_employee(request, data: EmployeeInputSchema):
             reporting_manager = None
             if data.reporting_manager_id:
                 reporting_manager = await sync_to_async(User.objects.get)(id=data.reporting_manager_id)
-                # Check if the reporting manager belongs to the same organization
-                if reporting_manager.organization != organization:
+                if await sync_to_async(lambda: reporting_manager.organization != organization)():
                     return 400, {"message": "Reporting manager does not belong to the same organization"}
+
             user_obj = await sync_to_async(User.objects.create)(
                 name=data.name,
                 username=data.username,

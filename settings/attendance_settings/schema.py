@@ -11,7 +11,7 @@ class Message(Schema):
     message: str
 
 class AttendenceSettingSchema(Schema):
-    organization: int
+    organization: organizationDetail
     enable_attendance: bool
     default_attendance_status:Optional[str]
     deduct_salary_for_absent_days: Optional[str]
@@ -90,3 +90,9 @@ class CompOffRulesSchema(Schema):
     daily_rule: Optional[Dict] = None
     weekoff_rule: Optional[Dict] = None
     holiday_rule: Optional[Dict] = None
+
+class UnderTimeRuleSchema(Schema):
+    organization: int
+    eligibility_hours: Optional[int]=None
+    consider_absent:Optional[bool]=False
+    conside_half_day:Optional[bool]=False
