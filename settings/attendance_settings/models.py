@@ -206,9 +206,9 @@ class UnderTimeRule(models.Model):
     updated_by = models.ForeignKey(UserProfile, on_delete=models.SET_NULL, null=True, related_name="updated_under_time_rule")
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     updated_at = models.DateTimeField(auto_now=True, null=True)
-    eligiblity_hours = models.IntegerField(null=True)
+    eligibility_hours = models.IntegerField(null=True)
     consider_absent = models.BooleanField(default=False, null=True)
-    conside_half_day = models.BooleanField(default=False, null=True)
+    consider_half_day = models.BooleanField(default=False, null=True)
 
 class Shift(models.Model):
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, null=True)
@@ -223,3 +223,7 @@ class Shift(models.Model):
     timein = models.TimeField(null=True)
     timeout = models.TimeField(null=True)
     make_default_shift = models.BooleanField(default=False, null=True)
+
+class AttendanceRule(models.Model):
+    shift = models.OneToOneField(Shift, on_delete=models.CASCADE, related_name='attendance_rule')
+    enable_attendance_rules = models.BooleanField(default=False)

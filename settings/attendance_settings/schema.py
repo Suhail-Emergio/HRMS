@@ -95,4 +95,22 @@ class UnderTimeRuleSchema(Schema):
     organization: int
     eligibility_hours: Optional[int]=None
     consider_absent:Optional[bool]=False
-    conside_half_day:Optional[bool]=False
+    consider_half_day:Optional[bool]=False
+from ninja import Schema
+from typing import Optional
+
+class ShiftSchema(Schema):
+    organization_id: int
+    created_by_id: Optional[int] = None
+    updated_by_id: Optional[int] = None
+    shift_type: Optional[str] = None
+    shift_code: Optional[str] = None
+    shift_title: Optional[str] = None
+    description: Optional[str] = None
+    timein: Optional[str] = None
+    timeout: Optional[str] = None
+    make_default_shift: Optional[bool] = None
+
+class AttendanceRuleSchema(Schema):
+    shift_id: int
+    enable_attendance_rules: bool

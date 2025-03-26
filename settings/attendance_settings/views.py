@@ -187,23 +187,18 @@ async def update_regularization_policies(request, data: RegularizationPoliciesSc
 async def create_sandwich_rules(request, data: SandwichRulesSettingsSchema):
     created_by = request.auth
     try:
-        # Get organization instance
         organization = await sync_to_async(Organization.objects.get)(id=data.organization)
-        
-        # Check if the user is an admin and belongs to the same organization
         is_authorized = (created_by.role == 'admin') and (created_by.organization_id == organization.id)
         
         if not is_authorized:
             return 403, {"message": "You don't have permission to create sandwich rules for this organization"}
-        
-        # Check if rules already exist for this organization
         exists = await sync_to_async(SandwichRulesSettings.objects.filter)(organization=organization)
         exists = await sync_to_async(lambda q: q.exists())(exists)
         
         if exists:
             return 409, {"message": "Sandwich Rules already exist for this organization"}
         
-        # Create settings data
+    
         settings_data = {
             'organization': organization,
             'created_by': created_by,
@@ -214,8 +209,6 @@ async def create_sandwich_rules(request, data: SandwichRulesSettingsSchema):
             'absent_week_offs_holidays_beginning_month': data.absent_week_offs_holidays_beginning_month,
             'absent_week_offs_holidays_end_month': data.absent_week_offs_holidays_end_month
         }
-        
-        # Create sandwich rules
         await sync_to_async(SandwichRulesSettings.objects.create)(**settings_data)
         return 201, {"message": "Sandwich Rules created successfully"}
     
@@ -228,13 +221,8 @@ async def create_sandwich_rules(request, data: SandwichRulesSettingsSchema):
 @attendance_settings_api.get("/sandwich_rules/{organization_id}", response={200: SandwichRulesSettingsSchema, 404: Message})
 async def get_sandwich_rules(request, organization_id: int):
     try:
-        # Get organization
         organization = await sync_to_async(Organization.objects.get)(id=organization_id)
-        
-        # Get sandwich rules
         sandwich_rules = await sync_to_async(SandwichRulesSettings.objects.get)(organization=organization)
-        
-        # Convert to schema
         result = SandwichRulesSettingsSchema(
             organization=organization_id,
             enable_sandwich_rules=sandwich_rules.enable_sandwich_rules,
@@ -259,19 +247,12 @@ async def get_sandwich_rules(request, organization_id: int):
 async def update_sandwich_rules(request, organization_id: int, data: SandwichRulesSettingsSchema):
     created_by = request.auth
     try:
-        # Get organization
         organization = await sync_to_async(Organization.objects.get)(id=organization_id)
-        
-        # Check if the user is an admin and belongs to the same organization
         is_authorized = (created_by.role == 'admin') and (created_by.organization_id == organization.id)
         
         if not is_authorized:
             return 403, {"message": "You don't have permission to update sandwich rules for this organization"}
-        
-        # Get sandwich rules
         sandwich_rules = await sync_to_async(SandwichRulesSettings.objects.get)(organization=organization)
-        
-        # Update fields
         sandwich_rules.enable_sandwich_rules = data.enable_sandwich_rules
         sandwich_rules.week_off_holidays_between_absents = data.week_off_holidays_between_absents
         sandwich_rules.week_off_holidays_after_absent = data.week_off_holidays_after_absent
@@ -279,8 +260,6 @@ async def update_sandwich_rules(request, organization_id: int, data: SandwichRul
         sandwich_rules.absent_week_offs_holidays_beginning_month = data.absent_week_offs_holidays_beginning_month
         sandwich_rules.absent_week_offs_holidays_end_month = data.absent_week_offs_holidays_end_month
         sandwich_rules.updated_by = created_by
-        
-        # Save changes
         await sync_to_async(sandwich_rules.save)()
         
         return 200, {"message": "Sandwich Rules updated successfully"}
@@ -294,32 +273,56 @@ async def update_sandwich_rules(request, organization_id: int, data: SandwichRul
 # Overtime Compensation and CompOff Settings
 
 # Overtime Settings
-@attendance_settings_api.post("/overtime_settings", response={201: dict, 409: dict})
+@attendance_settings_api.post("/overtime_settings", response={201: dict, 409: dict, 400: dict})
 def create_overtime_settings(request, data: OvertimeSettingsSchema):
-    if TimeManagementPolicy.objects.filter(organization=data.organization).exists():
-        return 409, {"message": "Overtime Settings already exist for this organization."}
+    try:
+        organization = Organization.objects.get(id=data.organization)
+        if TimeManagementPolicy.objects.filter(organization=organization).exists():
+            return 409, {"message": "Overtime Settings already exist for this organization."}
+        
+        # Convert the data dict and replace organization ID with the actual organization object
+        data_dict = data.dict()
+        data_dict['organization'] = organization
+        
+        TimeManagementPolicy.objects.create(**data_dict)
+        return 201, {"message": "Overtime Settings created successfully."}
+    except Organization.DoesNotExist:
+        return 400, {"message": "Organization not found."}
     
-    TimeManagementPolicy.objects.create(**data.dict())
-    return 201, {"message": "Overtime Settings created successfully."}
-
 @attendance_settings_api.get("/overtime_settings/{organization_id}", response={200: OvertimeSettingsSchema, 404: dict})
 def get_overtime_settings(request, organization_id: int):
     try:
-        overtime_settings = TimeManagementPolicy.objects.get(organization=organization_id)
-        return 200, overtime_settings
+        organization = Organization.objects.get(id=organization_id)
+        overtime_settings = TimeManagementPolicy.objects.get(organization=organization)
+        
+        model_fields = overtime_settings.__dict__
+        data = {k: v for k, v in model_fields.items() if not k.startswith('_')}
+    
+        data['organization'] = organization_id
+        return 200, data
+    except Organization.DoesNotExist:
+        return 404, {"message": "Organization not found."}
     except TimeManagementPolicy.DoesNotExist:
         return 404, {"message": "Overtime Settings not found for this organization."}
 
-@attendance_settings_api.put("/overtime_settings/{organization_id}", response={200: dict, 404: dict})
+@attendance_settings_api.put("/overtime_settings/{organization_id}", response={200: dict, 404: dict, 400: dict})
 def update_overtime_settings(request, organization_id: int, data: OvertimeSettingsSchema):
     try:
-        overtime_settings = TimeManagementPolicy.objects.get(organization=organization_id)
-        for key, value in data.dict().items():
-            setattr(overtime_settings, key, value)
-        overtime_settings.save()
-        return 200, {"message": "Overtime Settings updated successfully."}
-    except TimeManagementPolicy.DoesNotExist:
-        return 404, {"message": "Overtime Settings not found for this organization."}
+        organization = Organization.objects.get(id=organization_id)    
+        try:
+            overtime_settings = TimeManagementPolicy.objects.get(organization=organization)
+            data_dict = data.dict()
+            if 'organization' in data_dict:
+                del data_dict['organization']
+            for key, value in data_dict.items():
+                setattr(overtime_settings, key, value)
+                
+            overtime_settings.save()
+            return 200, {"message": "Overtime Settings updated successfully."}
+        except TimeManagementPolicy.DoesNotExist:
+            return 404, {"message": "Overtime Settings not found for this organization."}
+    except Organization.DoesNotExist:
+        return 400, {"message": "Organization not found."}
 
 # Compensation Rules
 @attendance_settings_api.post("/compensation_rules", response={201: dict, 409: dict})
@@ -388,30 +391,40 @@ async def create_undertime_rule(request, data: UnderTimeRuleSchema):
             exists = await sync_to_async(UnderTimeRule.objects.filter(organization=organization).exists)()
             if exists:
                 return 409, {"message": "Undertime rules already exist for this organization"}
-
-            undertime_rule = await sync_to_async(UnderTimeRule.objects.create)(
+            undertime_rule = await sync_to_async(lambda: UnderTimeRule.objects.create(
                 organization=organization,
                 created_by=user,
-                eligiblity_hours=data.eligiblity_hours,
+                eligibility_hours=data.eligibility_hours,
                 consider_absent=data.consider_absent,
-                conside_half_day=data.conside_half_day
-            )
-
-            return 201, UnderTimeRuleSchema.from_orm(undertime_rule)
-
+                consider_half_day=data.consider_half_day
+            ))()
+            rule_dict = await sync_to_async(lambda: {
+                "id": undertime_rule.id,
+                "organization": undertime_rule.organization_id,  
+                "eligibility_hours": undertime_rule.eligibility_hours,
+                "consider_absent": undertime_rule.consider_absent,
+                "consider_half_day": undertime_rule.consider_half_day,
+            })()
+            return 201, UnderTimeRuleSchema(**rule_dict)        
         except ObjectDoesNotExist:
             return 400, {"message": "Organization not found"}
         except Exception as e:
             return 400, {"message": str(e)}
-
     return 400, {"message": "Unauthorized access"}
-
 
 @attendance_settings_api.get("/undertime_rules/{organization_id}", response={200: UnderTimeRuleSchema, 404: Message})
 async def get_undertime_rules(request, organization_id: int):
     try:
         undertime_rule = await sync_to_async(UnderTimeRule.objects.get)(organization=organization_id)
-        return 200, UnderTimeRuleSchema.from_orm(undertime_rule)
+        rule_dict = await sync_to_async(lambda: {
+            "id": undertime_rule.id,
+            "organization": undertime_rule.organization_id,
+            "eligibility_hours": undertime_rule.eligibility_hours,
+            "consider_absent": undertime_rule.consider_absent,
+            "consider_half_day": undertime_rule.consider_half_day
+        })()
+        return 200, UnderTimeRuleSchema(**rule_dict)
+        
     except UnderTimeRule.DoesNotExist:
         return 404, {"message": "Undertime rules not found for this organization"}
     
@@ -419,10 +432,20 @@ async def get_undertime_rules(request, organization_id: int):
 async def update_undertime_rules(request, organization_id: int, data: UnderTimeRuleSchema):
     try:
         undertime_rule = await sync_to_async(UnderTimeRule.objects.get)(organization=organization_id)
+        exclude_fields = ['organization', 'id']
         for key, value in data.dict().items():
-            setattr(undertime_rule, key, value)
+            if key not in exclude_fields:
+                setattr(undertime_rule, key, value)
         await sync_to_async(undertime_rule.save)()
-        return 200, UnderTimeRuleSchema.from_orm(undertime_rule)
+        rule_dict = await sync_to_async(lambda: {
+            "id": undertime_rule.id,
+            "organization": undertime_rule.organization_id,
+            "eligibility_hours": undertime_rule.eligibility_hours,
+            "consider_absent": undertime_rule.consider_absent,
+            "consider_half_day": undertime_rule.consider_half_day
+        })()
+        return 200, UnderTimeRuleSchema(**rule_dict)
+        
     except UnderTimeRule.DoesNotExist:
         return 404, {"message": "Undertime rules not found for this organization"}
     
@@ -434,3 +457,27 @@ async def delete_undertime_rules(request, organization_id: int):
         return 200, {"message": "Undertime rules deleted successfully"}
     except UnderTimeRule.DoesNotExist:
         return 404, {"message": "Undertime rules not found for this organization"}
+    
+
+# Advance Rules
+@attendance_settings_api.post("/advance_rules", response={201: AttendanceRuleSchema, 400: Message, 409: Message})
+async def create_advance_rule(request, data: AttendanceRuleSchema):
+    user = request.auth
+    shift_id = data.shift_id
+    enable_attendance_rules = data.enable_attendance_rules
+
+    try:
+        shift = Shift.objects.get(id=shift_id)
+    except Shift.DoesNotExist:
+        return 400, {"detail": "Shift not found"}
+
+    if AttendanceRule.objects.filter(shift=shift).exists():
+        return 409, {"detail": "Advance rule for this shift already exists"}
+
+    advance_rule = AttendanceRule.objects.create(
+        shift=shift,
+        enable_attendance_rules=enable_attendance_rules
+        # Add other fields as needed
+    )
+
+    return 201, advance_rule
